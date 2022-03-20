@@ -1,0 +1,67 @@
+﻿@using ComponentLibrary.Board
+@using ComponentLibrary.WinLoseDraw
+@using ComponentLibrary.Timer;
+@using SlimeWars
+@using AutomatedPlayer
+@using Game.Enum;
+@page "/slimewars"
+
+<h3>SlimeWars</h3>
+
+@if (slimeWars != null)
+{
+    <button type="button" class="btn btn-primary" @onclick=HandleResetClick>Reset</button>
+    <CountdownTimer _game="@slimeWars" /> 
+    <BoardElement BoardData="@slimeWars.Board" MyPlayerId="@MyPlayerId" />
+}
+
+@if (slimeWars?.Status == Status.Completed)
+{
+    var parameters = new ModalParameters();
+    parameters.Add(nameof(Outcome), GetOutcome());
+    Modal.Show<WinLoseDraw>("", parameters, new ModalOptions { HideCloseButton = true });
+}
+
+@code {
+    [CascadingParameter] public IModalService Modal { get; set; }
+
+    private SlimeWars slimeWars;
+
+    private Guid MyPlayerId;
+
+    //keep a collection of opponents to ensure they do not fall out of scope and become fodder for the GC mid game :)
+    private List<AutomatedPlayer> Opponents = new List<AutomatedPlayer>();
+
+    protected override void OnInitialized()
+    {
+        //identifier of this human player
+        MyPlayerId = Guid.NewGuid();
+
+        //identifier of our cpu opponent
+        Guid opponentId = Guid.NewGuid();
+
+        //fire up the game logic and board
+        slimeWars = new SlimeWars(7, 7, new List<Guid> { MyPlayerId, opponentId });
+        slimeWars.PropertyChanged += (s, e) => StateHasChanged();
+        slimeWars.TurnIterated += (s, e) => StateHasChanged();
+
+        //and make sure our opponent has a reference to the game board too.
+        Opponents.Add(new MechanicalTurk(opponentId, slimeWars));
+    }
+
+    private Outcome GetOutcome()
+    {
+        if (slimeWars.Status != Status.Completed)
+            throw new Exception("the game has not yet completed, do not call GetOutcome yet");
+
+        Outcome outcome = Outcome.Lose;
+        if (slimeWars.Winner == null)
+            outcome = Outcome.Draw;
+        else if (slimeWars.Winner.Id == MyPlayerId)
+            outcome = Outcome.Win;
+
+        return outcome;
+    }
+
+    private void HandleResetClick() => slimeWars?.Reset();
+}
